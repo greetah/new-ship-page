@@ -1,27 +1,53 @@
-import { getNowPlaying, processPlaying } from "../lib/spotify";
+import querystring from "querystring";
 
-export default async function NowPlaying() {
-  const response = await getNowPlaying();
-  let data;
+const client_id = process.env.SPOTIFY_CLIENT_ID;
+const client_secret = process.env.SPOTIFY_CLIENT_SECRET;
+const refresh_token = process.env.SPOTIFY_REFRESH_TOKEN;
 
-  if (response.status === 204 || response.status > 400) {
-    data = { isPlaying: false };
-    if (response.status === 401) {
-      console.error("TOKEN IS FUCKED: " + response.statusText);
-    }
-  } else {
-    const song = await response.json();
-    data = processPlaying(song);
-  }
-  return data?.isPlaying ? (
-    <div className="grid-rows-auto grid-flow-col gap-4 py-6 pr-4 flex-grow-1">
-      <div className="my-underline font:bold row-span-2">
-        <a href={data.songUrl}>Now Playing</a>
-      </div>
-      <div className="font-bold">
-        <p>{data.title}</p>
-        <p className="font-semibold">{data.artist}</p>
-      </div>
-    </div>
-  ) : null;
+const basic = Buffer.from(`${client_id}:${client_secret}`).toString("base64");
+const NOW_PLAYING_ENDPOINT = `https://api.spotify.com/v1/me/player/currently-playing`;
+const TOKEN_ENDPOINT = `https://accounts.spotify.com/api/token`;
+
+async function getAccessToken() {
+  const response = await fetch(TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${basic}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: querystring.stringify({
+      grant_type: "refresh_token",
+      refresh_token,
+    }),
+    cache: "no-store",
+  });
+  return await response.json();
+}
+
+export async function getNowPlaying() {
+  const { access_token } = await getAccessToken();
+
+  return fetch(NOW_PLAYING_ENDPOINT, {
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${access_token}`,
+    },
+  });
+}
+
+export function processPlaying(song) {
+  const isPlaying = song.is_playing;
+  const title = song.item.name;
+  const artist = song.item.artists.map((_artist) => _artist.name).join(", ");
+  const album = song.item.album.name;
+  const albumImageUrl = song.item.album.images[0].url;
+  const songUrl = song.item.external_urls.spotify;
+  return {
+    album,
+    albumImageUrl,
+    artist,
+    isPlaying,
+    songUrl,
+    title,
+  };
 }
